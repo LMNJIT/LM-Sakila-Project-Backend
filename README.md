@@ -9,6 +9,7 @@ Landing Page (4):
 
 Films Page (2): • As a user I want to be able to search a film by name of film, name of an actor, or genre of the film 
 • As a user I want to be able to view details of the film 
+
 Customer Page (1): 
 • As a user I want to view a list of all customers (Pref. using pagination)
 
