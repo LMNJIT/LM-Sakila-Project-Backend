@@ -19,12 +19,15 @@ def get_films():
     total_count = result['total']
     total_pages = (total_count + limit - 1) // limit
     
-    # query to get films with category
+    # query to get films with category and rental count
     query = """
-        select f.*, c.name as category
+        select f.film_id, f.title, f.description, f.release_year, f.rental_duration, f.rental_rate, f.length, f.replacement_cost, f.rating, c.name as category, COUNT(r.rental_id) as rental_count
         from film f
         join film_category film_c on f.film_id = film_c.film_id
         join category c on film_c.category_id = c.category_id
+        join inventory i on f.film_id = i.film_id
+        join rental r on i.inventory_id = r.inventory_id
+        group by f.film_id, c.name
         limit %s offset %s
     """
     cursor.execute(query, (limit, offset))
@@ -42,13 +45,16 @@ def get_films():
 def get_film_details(film_id):
     cursor = mysql.connection.cursor()
     
-    # SQL query to get film info
+    # SQL query to get film info with rental count
     cursor.execute("""
-        select f.*, c.name as category
+        select f.*, c.name as category, COUNT(r.rental_id) as rental_count
         from film f
         join film_category film_c on f.film_id = film_c.film_id
         join category c on film_c.category_id = c.category_id
+        join inventory i on f.film_id = i.film_id
+        join rental r on i.inventory_id = r.inventory_id
         where f.film_id = %s
+        group by f.film_id, c.name
     """, (film_id,))
     
     film = cursor.fetchone()
@@ -77,11 +83,14 @@ def search_films():
     # search by category
     if search_type == 'category':
         cursor.execute("""
-            select f.*, c.name as category
+            select f.*, c.name as category, COUNT(r.rental_id) as rental_count
             from category c
             join film_category film_c on c.category_id = film_c.category_id
             join film f on film_c.film_id = f.film_id
+            join inventory i on f.film_id = i.film_id
+            join rental r on i.inventory_id = r.inventory_id
             where LOWER(c.name) LIKE LOWER(%s)
+            group by f.film_id, c.name
         """, (f'%{search_query}%',))
         results = cursor.fetchall()
     
@@ -104,34 +113,43 @@ def search_films():
                 actor_id = actor_result['actor_id']
                 # get films for this actor
                 cursor.execute("""
-                    select f.*, c.name as category
+                    select f.*, c.name as category, COUNT(r.rental_id) as rental_count
                     from film f
                     join film_actor film_a on f.film_id = film_a.film_id
                     join film_category film_c on f.film_id = film_c.film_id
                     join category c on film_c.category_id = c.category_id
+                    join inventory i on f.film_id = i.film_id
+                    join rental r on i.inventory_id = r.inventory_id
                     where film_a.actor_id = %s
+                    group by f.film_id, c.name
                 """, (actor_id,))
                 results = cursor.fetchall()
     
     # search by title
     elif search_type == 'title':
         cursor.execute("""
-            select f.*, c.name as category
+            select f.*, c.name as category, COUNT(r.rental_id) as rental_count
             from film f
             join film_category film_c on f.film_id = film_c.film_id
             join category c on film_c.category_id = c.category_id
+            join inventory i on f.film_id = i.film_id
+            join rental r on i.inventory_id = r.inventory_id
             where LOWER(f.title) LIKE LOWER(%s)
+            group by f.film_id, c.name
         """, (f'%{search_query}%',))
         results = cursor.fetchall()
     
     # default search 
     else:
         cursor.execute("""
-            select f.*, c.name as category
+            select f.*, c.name as category, COUNT(r.rental_id) as rental_count
             from film f
             join film_category film_c on f.film_id = film_c.film_id
             join category c on film_c.category_id = c.category_id
+            join inventory i on f.film_id = i.film_id
+            join rental r on i.inventory_id = r.inventory_id
             where f.title like %s or f.description like %s or c.name like %s
+            group by f.film_id, c.name
         """, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
         results = cursor.fetchall()
     
