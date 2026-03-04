@@ -402,7 +402,18 @@ def delete_customer(customer_id):
         return jsonify({'error': f'Cannot delete customer with {active_rentals} active rental(s). Customer must return all rented items first.'}), 400
     
     try:
-        # delete customer
+        # delete in order of foreign key dependencies
+        # 1. delete from payment (references customer_id)
+        cursor.execute("""
+            delete from payment where customer_id = %s
+        """, (customer_id,))
+        
+        # 2. delete from rental (references customer_id)
+        cursor.execute("""
+            delete from rental where customer_id = %s
+        """, (customer_id,))
+        
+        # 3. delete from customer
         cursor.execute("""
             delete from customer where customer_id = %s
         """, (customer_id,))
@@ -410,7 +421,7 @@ def delete_customer(customer_id):
         mysql.connection.commit()
         cursor.close()
         
-        return jsonify({'message': f'Customer {customer["first_name"]} {customer["last_name"]} deleted successfully'}), 200
+        return jsonify({'message': f'Customer {customer["first_name"]} {customer["last_name"]} has been permanently deleted'}), 200
     
     except Exception as e:
         mysql.connection.rollback()
