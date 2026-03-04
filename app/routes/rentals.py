@@ -97,3 +97,59 @@ def create_rental():
         mysql.connection.rollback()
         cursor.close()
         return jsonify({'error': str(e)}), 400
+
+# return a rented film
+@app.route('/api/rentals/<int:rental_id>/return', methods=['PATCH'])
+def return_rental(rental_id):
+    cursor = mysql.connection.cursor()
+    
+    try:
+        # check if rental exists
+        cursor.execute("""
+            select r.rental_id, r.return_date, f.title, c.first_name, c.last_name
+            from rental r
+            join inventory i on r.inventory_id = i.inventory_id
+            join film f on i.film_id = f.film_id
+            join customer c on r.customer_id = c.customer_id
+            where r.rental_id = %s
+        """, (rental_id,))
+        
+        rental = cursor.fetchone()
+        if rental == None:
+            cursor.close()
+            return jsonify({'error': 'Rental not found'}), 404
+        
+        # check if already returned (prevent double return)
+        if rental['return_date'] != None:
+            cursor.close()
+            return jsonify({'error': f'Film "{rental["title"]}" has already been returned on {rental["return_date"]}'}), 400
+        
+        # mark as returned
+        cursor.execute("""
+            update rental
+            set return_date = now(), last_update = now()
+            where rental_id = %s
+        """, (rental_id,))
+        
+        mysql.connection.commit()
+        
+        # fetch updated rental
+        cursor.execute("""
+            select r.rental_id, r.rental_date, r.inventory_id, r.customer_id, r.return_date, r.staff_id, r.last_update,
+            f.title, c.first_name, c.last_name
+            from rental r
+            join inventory i on r.inventory_id = i.inventory_id
+            join film f on i.film_id = f.film_id
+            join customer c on r.customer_id = c.customer_id
+            where r.rental_id = %s
+        """, (rental_id,))
+        
+        updated_rental = cursor.fetchone()
+        cursor.close()
+        
+        return jsonify(updated_rental), 200
+    
+    except Exception as e:
+        mysql.connection.rollback()
+        cursor.close()
+        return jsonify({'error': str(e)}), 400
