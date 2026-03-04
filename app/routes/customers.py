@@ -92,3 +92,47 @@ def search_customers():
     cursor.close()
     
     return jsonify(customer_results), 200
+
+# get customer details with address
+@app.route('/api/customers/<int:customer_id>', methods=['GET'])
+def get_customer_details(customer_id):
+    cursor = mysql.connection.cursor()
+    
+    # get customer details with address info
+    cursor.execute("""
+        select c.customer_id, c.first_name, c.last_name, c.email, c.store_id, c.active, c.create_date, c.last_update,
+        a.address, a.district, a.city_id, a.postal_code, a.phone
+        from customer c
+        join address a on c.address_id = a.address_id
+        where c.customer_id = %s
+    """, (customer_id,))
+    
+    customer = cursor.fetchone()
+    cursor.close()
+    
+    # check if customer exists
+    if customer == None:
+        return jsonify({'error': 'Customer not found'}), 404
+    
+    return jsonify(customer), 200
+
+# get customer rental history
+@app.route('/api/customers/<int:customer_id>/rentals', methods=['GET'])
+def get_customer_rentals(customer_id):
+    cursor = mysql.connection.cursor()
+    
+    # get all rentals for this customer with film title and status
+    cursor.execute("""
+        select r.rental_id, r.rental_date, r.return_date, f.title, 
+        case when r.return_date is null then 'out' else 'returned' end as status
+        from rental r
+        join inventory i on r.inventory_id = i.inventory_id
+        join film f on i.film_id = f.film_id
+        where r.customer_id = %s
+        order by r.rental_date desc
+    """, (customer_id,))
+    
+    rentals = cursor.fetchall()
+    cursor.close()
+    
+    return jsonify(rentals), 200
