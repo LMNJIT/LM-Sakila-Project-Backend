@@ -16,3 +16,4 @@ CORS(app)
 from .routes import films
 from .routes import customers
 from .routes import actors
+from .routes import rentals

@@ -40,32 +40,6 @@ def get_films():
     }
     return jsonify(response), 200
 
-# get single film details
-@app.route('/api/films/<int:film_id>', methods=['GET'])
-def get_film_details(film_id):
-    cursor = mysql.connection.cursor()
-    
-    # SQL query to get film info with rental count
-    cursor.execute("""
-        select f.*, c.name as category, COUNT(r.rental_id) as rental_count
-        from film f
-        join film_category film_c on f.film_id = film_c.film_id
-        join category c on film_c.category_id = c.category_id
-        join inventory i on f.film_id = i.film_id
-        join rental r on i.inventory_id = r.inventory_id
-        where f.film_id = %s
-        group by f.film_id, c.name
-    """, (film_id,))
-    
-    film = cursor.fetchone()
-    cursor.close()
-    
-    # check if film exists
-    if film == None:
-        return jsonify({'error': 'Film not found'}), 404
-    
-    return jsonify(film), 200
-
 # search films
 @app.route('/api/films/search', methods=['GET'])
 def search_films():
@@ -178,3 +152,59 @@ def get_top_rented():
     cursor.close()
     
     return jsonify(top_films), 200
+
+# get available inventory count for a film
+@app.route('/api/films/<int:film_id>/inventory', methods=['GET'])
+def get_film_inventory(film_id):
+    cursor = mysql.connection.cursor()
+    
+    # get total copies and active rentals
+    cursor.execute("""
+        select COUNT(DISTINCT i.inventory_id) as total_copies,
+        COUNT(DISTINCT case when r.return_date is null then i.inventory_id else null end) as active_rentals
+        from inventory i
+        left join rental r on i.inventory_id = r.inventory_id
+        where i.film_id = %s
+    """, (film_id,))
+    
+    result = cursor.fetchone()
+    cursor.close()
+    
+    if result is None or result['total_copies'] == 0:
+        return jsonify({'available_count': 0, 'total_copies': 0, 'active_rentals': 0}), 200
+    
+    total_copies = result['total_copies']
+    active_rentals = result['active_rentals']
+    available_count = total_copies - active_rentals
+    
+    return jsonify({
+        'available_count': available_count,
+        'total_copies': total_copies,
+        'active_rentals': active_rentals
+    }), 200
+
+# get single film details
+@app.route('/api/films/<int:film_id>', methods=['GET'])
+def get_film_details(film_id):
+    cursor = mysql.connection.cursor()
+    
+    # SQL query to get film info with rental count
+    cursor.execute("""
+        select f.*, c.name as category, COUNT(r.rental_id) as rental_count
+        from film f
+        join film_category film_c on f.film_id = film_c.film_id
+        join category c on film_c.category_id = c.category_id
+        join inventory i on f.film_id = i.film_id
+        join rental r on i.inventory_id = r.inventory_id
+        where f.film_id = %s
+        group by f.film_id, c.name
+    """, (film_id,))
+    
+    film = cursor.fetchone()
+    cursor.close()
+    
+    # check if film exists
+    if film == None:
+        return jsonify({'error': 'Film not found'}), 404
+    
+    return jsonify(film), 200
