@@ -232,9 +232,9 @@ def update_customer(customer_id):
     
     cursor = mysql.connection.cursor()
     
-    # check if customer exists
+    # check if customer exists and get address_id
     cursor.execute("""
-        select customer_id from customer where customer_id = %s
+        select customer_id, address_id from customer where customer_id = %s
     """, (customer_id,))
     
     customer = cursor.fetchone()
@@ -242,13 +242,23 @@ def update_customer(customer_id):
         cursor.close()
         return jsonify({'error': 'Customer not found'}), 404
     
-    # extract editable fields
+    address_id = customer['address_id']
+    
+    # extract editable customer fields
     first_name = data.get('first_name', '').strip() if 'first_name' in data else None
     last_name = data.get('last_name', '').strip() if 'last_name' in data else None
     email = data.get('email', '').strip() if 'email' in data else None
     active = data.get('active') if 'active' in data else None
     
-    # validate fields if provided
+    # extract editable address fields
+    address = data.get('address', '').strip() if 'address' in data else None
+    address2 = data.get('address2', '').strip() if 'address2' in data else None
+    district = data.get('district', '').strip() if 'district' in data else None
+    postal_code = data.get('postal_code', '').strip() if 'postal_code' in data else None
+    phone = data.get('phone', '').strip() if 'phone' in data else None
+    city_id = data.get('city_id') if 'city_id' in data else None
+    
+    # validate customer fields if provided
     if first_name is not None and (not first_name or len(first_name) > 45):
         cursor.close()
         return jsonify({'error': 'Invalid first_name (1-45 characters)'}), 400
@@ -262,52 +272,145 @@ def update_customer(customer_id):
         cursor.close()
         return jsonify({'error': 'Invalid active (must be 0 or 1)'}), 400
     
+    # validate address fields if provided
+    if address is not None and not address:
+        cursor.close()
+        return jsonify({'error': 'Invalid address'}), 400
+    if district is not None and not district:
+        cursor.close()
+        return jsonify({'error': 'Invalid district'}), 400
+    if postal_code is not None and not postal_code:
+        cursor.close()
+        return jsonify({'error': 'Invalid postal_code'}), 400
+    if phone is not None and not phone:
+        cursor.close()
+        return jsonify({'error': 'Invalid phone'}), 400
+    if city_id is not None and (not isinstance(city_id, int) or city_id < 1):
+        cursor.close()
+        return jsonify({'error': 'Invalid city_id (must be positive integer)'}), 400
+    
     try:
-        # build dynamic update query
-        update_fields = []
-        update_params = []
+        # update address fields if any provided
+        address_update_fields = []
+        address_update_params = []
+        
+        if address is not None:
+            address_update_fields.append('address = %s')
+            address_update_params.append(address)
+        if address2 is not None:
+            address_update_fields.append('address2 = %s')
+            address_update_params.append(address2)
+        if district is not None:
+            address_update_fields.append('district = %s')
+            address_update_params.append(district)
+        if postal_code is not None:
+            address_update_fields.append('postal_code = %s')
+            address_update_params.append(postal_code)
+        if phone is not None:
+            address_update_fields.append('phone = %s')
+            address_update_params.append(phone)
+        if city_id is not None:
+            address_update_fields.append('city_id = %s')
+            address_update_params.append(city_id)
+        
+        if address_update_fields:
+            address_update_fields.append('last_update = now()')
+            address_update_params.append(address_id)
+            
+            cursor.execute("""
+                update address set {} where address_id = %s
+            """.format(', '.join(address_update_fields)), address_update_params)
+        
+        # update customer fields if any provided
+        customer_update_fields = []
+        customer_update_params = []
         
         if first_name is not None:
-            update_fields.append('first_name = %s')
-            update_params.append(first_name)
+            customer_update_fields.append('first_name = %s')
+            customer_update_params.append(first_name)
         if last_name is not None:
-            update_fields.append('last_name = %s')
-            update_params.append(last_name)
+            customer_update_fields.append('last_name = %s')
+            customer_update_params.append(last_name)
         if email is not None:
-            update_fields.append('email = %s')
-            update_params.append(email)
+            customer_update_fields.append('email = %s')
+            customer_update_params.append(email)
         if active is not None:
-            update_fields.append('active = %s')
-            update_params.append(active)
+            customer_update_fields.append('active = %s')
+            customer_update_params.append(active)
         
-        # no fields to update
-        if not update_fields:
+        if customer_update_fields:
+            customer_update_fields.append('last_update = now()')
+            customer_update_params.append(customer_id)
+            
+            cursor.execute("""
+                update customer set {} where customer_id = %s
+            """.format(', '.join(customer_update_fields)), customer_update_params)
+        
+        # check if any updates were made
+        if not address_update_fields and not customer_update_fields:
             cursor.close()
             return jsonify({'error': 'No fields to update'}), 400
         
-        # add last_update and customer_id to params
-        update_fields.append('last_update = now()')
-        update_params.append(customer_id)
-        
-        update_query = f"update customer set {', '.join(update_fields)} where customer_id = %s"
-        
-        cursor.execute("""
-            update customer set {} where customer_id = %s
-        """.format(', '.join(update_fields)), update_params)
-        
         mysql.connection.commit()
         
-        # fetch updated customer
+        # fetch updated customer with address info
         cursor.execute("""
-            select customer_id, first_name, last_name, email, store_id, active, create_date, last_update
-            from customer
-            where customer_id = %s
+            select c.customer_id, c.first_name, c.last_name, c.email, c.store_id, c.active, c.create_date, c.last_update,
+                   a.address, a.district, a.city_id, a.postal_code, a.phone
+            from customer c
+            join address a on c.address_id = a.address_id
+            where c.customer_id = %s
         """, (customer_id,))
         
         updated_customer = cursor.fetchone()
         cursor.close()
         
         return jsonify(updated_customer), 200
+    
+    except Exception as e:
+        mysql.connection.rollback()
+        cursor.close()
+        return jsonify({'error': str(e)}), 400
+
+# delete customer
+@app.route('/api/customers/<int:customer_id>', methods=['DELETE'])
+def delete_customer(customer_id):
+    cursor = mysql.connection.cursor()
+    
+    # check if customer exists
+    cursor.execute("""
+        select customer_id, first_name, last_name from customer where customer_id = %s
+    """, (customer_id,))
+    
+    customer = cursor.fetchone()
+    if customer == None:
+        cursor.close()
+        return jsonify({'error': 'Customer not found'}), 404
+    
+    # check if customer has active rentals
+    cursor.execute("""
+        select COUNT(*) as active_rentals
+        from rental
+        where customer_id = %s and return_date is null
+    """, (customer_id,))
+    
+    rental_check = cursor.fetchone()
+    active_rentals = rental_check['active_rentals']
+    
+    if active_rentals > 0:
+        cursor.close()
+        return jsonify({'error': f'Cannot delete customer with {active_rentals} active rental(s). Customer must return all rented items first.'}), 400
+    
+    try:
+        # delete customer
+        cursor.execute("""
+            delete from customer where customer_id = %s
+        """, (customer_id,))
+        
+        mysql.connection.commit()
+        cursor.close()
+        
+        return jsonify({'message': f'Customer {customer["first_name"]} {customer["last_name"]} deleted successfully'}), 200
     
     except Exception as e:
         mysql.connection.rollback()
